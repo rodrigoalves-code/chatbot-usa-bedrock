@@ -22,7 +22,7 @@ if "avaliacao_enviada" not in st.session_state:
 
 # --- Lógica de Exibição em 3 Etapas ---
 
-# ETAPA 1: CHAT ATIVO
+# ETAPA 1: CHAT ATIVO (MODO BUFFERED)
 if not st.session_state["chat_finalizado"]:
     st.caption(f"Session ID: {st.session_state['user_session_id']}")
     
@@ -42,38 +42,29 @@ if not st.session_state["chat_finalizado"]:
             indicador = st.empty()
             indicador.markdown("💬 Digitando...")
 
-            resposta_completa = "" # Variável para acumular a resposta
-            
             try:
-                # Chama a rota /chat da sua API
+                # Chama a URL da sua Função Lambda (qualquer que seja a URL)
+                # O IMPORTANTE É NÃO TER 'stream=True'
                 response = requests.post(CHAT_LAMBDA_URL, json={
                     "pergunta": prompt,
                     "sessionId": st.session_state["user_session_id"]
-                }, stream=True)
+                })
 
                 if response.status_code == 200:
-                    # 2. Iteramos sobre cada "pedaço" da resposta
-                    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                        if chunk:
-                            resposta_completa += chunk
-                            # 3. Atualizamos o placeholder a cada pedaço
-                            indicador.markdown(resposta_completa + "▌") # O ▌ dá um efeito de cursor
-                    
-                    # 4. Remove o cursor no final
-                    indicador.markdown(resposta_completa)
+                    # Voltamos a usar response.json()
+                    resposta = response.json().get("resposta", "Sem resposta")
                 else:
-                    resposta_completa = f"Erro na API de chat: {response.text}"
-                    indicador.markdown(resposta_completa)
+                    resposta = f"Erro na API de chat: {response.text}"
 
             except Exception as e:
-                resposta_completa = f"Erro de conexão: {e}"
-                indicador.markdown(resposta_completa)
+                resposta = f"Erro de conexão: {e}"
 
-            # NÃO precisamos mais de 'indicador.empty()' ou 'st.markdown(resposta)'
-            # A variável 'indicador' já contém a resposta final.
+            # Remove o indicador e mostra resposta final
+            indicador.empty()
+            st.markdown(resposta)
 
-        # Armazena a resposta COMPLETA
-        st.session_state["mensagens"].append({"role": "assistant", "content": resposta_completa})
+        # Armazena resposta
+        st.session_state["mensagens"].append({"role": "assistant", "content": resposta})
     
     if st.button("Finalizar Chat e Avaliar"):
         st.session_state["chat_finalizado"] = True
@@ -128,6 +119,7 @@ else:
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
         st.rerun()
+
 
 
 
