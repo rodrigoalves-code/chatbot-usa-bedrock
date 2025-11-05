@@ -42,27 +42,38 @@ if not st.session_state["chat_finalizado"]:
             indicador = st.empty()
             indicador.markdown("💬 Digitando...")
 
+            resposta_completa = "" # Variável para acumular a resposta
+            
             try:
                 # Chama a rota /chat da sua API
                 response = requests.post(f"{CHAT_LAMBDA_URL}/lambda-chatbot-usa", json={
                     "pergunta": prompt,
                     "sessionId": st.session_state["user_session_id"]
-                })
+                }, stream=True)
 
                 if response.status_code == 200:
-                    resposta = response.json().get("resposta", "Sem resposta")
+                    # 2. Iteramos sobre cada "pedaço" da resposta
+                    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                        if chunk:
+                            resposta_completa += chunk
+                            # 3. Atualizamos o placeholder a cada pedaço
+                            indicador.markdown(resposta_completa + "▌") # O ▌ dá um efeito de cursor
+                    
+                    # 4. Remove o cursor no final
+                    indicador.markdown(resposta_completa)
                 else:
-                    resposta = f"Erro na API de chat: {response.text}"
+                    resposta_completa = f"Erro na API de chat: {response.text}"
+                    indicador.markdown(resposta_completa)
 
             except Exception as e:
-                resposta = f"Erro de conexão: {e}"
+                resposta_completa = f"Erro de conexão: {e}"
+                indicador.markdown(resposta_completa)
 
-            # Remove o indicador e mostra resposta final
-            indicador.empty()
-            st.markdown(resposta)
+            # NÃO precisamos mais de 'indicador.empty()' ou 'st.markdown(resposta)'
+            # A variável 'indicador' já contém a resposta final.
 
-        # Armazena resposta
-        st.session_state["mensagens"].append({"role": "assistant", "content": resposta})
+        # Armazena a resposta COMPLETA
+        st.session_state["mensagens"].append({"role": "assistant", "content": resposta_completa})
     
     if st.button("Finalizar Chat e Avaliar"):
         st.session_state["chat_finalizado"] = True
@@ -117,4 +128,5 @@ else:
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
         st.rerun()
+
 
