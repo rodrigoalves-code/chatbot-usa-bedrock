@@ -5,7 +5,7 @@ import time
 
 API_BASE_URL = "https://fbd5gcxt52.execute-api.us-east-1.amazonaws.com/default"
 # --- Nova URL da Função Lambda (para o chat)
-CHAT_LAMBDA_URL = "https://pklh47axbxddmctyxabw2gkwba0gxsou.lambda-url.us-east-1.on.aws/"
+CHAT_LAMBDA_URL = "https://dnbm65zpeghlyum3feleblme5e0njpno.lambda-url.us-east-1.on.aws/"
 
 st.set_page_config(page_title="Chatbot Bedrock", layout="centered")
 st.title("🤖 Chatbot - Bedrock Agent")
@@ -128,6 +128,7 @@ else:
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
         st.rerun()
+
 
 
 
