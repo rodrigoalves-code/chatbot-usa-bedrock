@@ -46,7 +46,7 @@ if not st.session_state["chat_finalizado"]:
             
             try:
                 # Chama a rota /chat da sua API
-                response = requests.post(f"{CHAT_LAMBDA_URL}/lambda-chatbot-usa", json={
+                response = requests.post(CHAT_LAMBDA_URL, json={
                     "pergunta": prompt,
                     "sessionId": st.session_state["user_session_id"]
                 }, stream=True)
@@ -128,5 +128,6 @@ else:
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
         st.rerun()
+
 
 
