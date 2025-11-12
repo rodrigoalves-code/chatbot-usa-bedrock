@@ -3,9 +3,9 @@ import requests
 import uuid
 import time
 
-API_BASE_URL = "https://fbd5gcxt52.execute-api.us-east-1.amazonaws.com/default"
-# --- Nova URL da Função Lambda (para o chat)
-CHAT_LAMBDA_URL = "https://dnbm65zpeghlyum3feleblme5e0njpno.lambda-url.us-east-1.on.aws/"
+# --- URLs ---
+CHAT_LAMBDA_URL = "https://dnbm65zpeghlyum3feleblme5e0njpno.lambda-url.us-east-1.on.aws/" # Sua Lambda URL
+URL_AVALIACAO = "https://fbd5gcxt52.execute-api.us-east-1.amazonaws.com/default/lambda-avaliacao" # Sua Lambda de Avaliação
 
 st.set_page_config(page_title="Chatbot Bedrock", layout="centered")
 st.title("🤖 Chatbot - Bedrock Agent")
@@ -20,57 +20,118 @@ if "chat_finalizado" not in st.session_state:
 if "avaliacao_enviada" not in st.session_state:
     st.session_state["avaliacao_enviada"] = False
 
-# --- Lógica de Exibição em 3 Etapas ---
+
+# --- FUNÇÃO HELPER PARA EXIBIR MENSAGENS (COM FONTES) ---
+def exibir_mensagem(content, role="assistant"):
+    """
+    Função helper para exibir a mensagem e as fontes.
+    """
+    # Verifica se é uma resposta da IA (que agora é um dicionário)
+    if role == "assistant" and isinstance(content, dict):
+        # 1. Exibe a resposta principal
+        st.markdown(content.get("resposta", "Erro: Resposta não encontrada"))
+        
+        # 2. Busca pelos metadados e fontes
+        metadata = content.get("metadata", {})
+        sources = metadata.get("sources", [])
+        
+        # 3. Se houver fontes, cria o popover!
+        if sources:
+            with st.popover("Fontes 📚", use_container_width=True):
+                for i, source in enumerate(sources):
+                    st.subheader(f"Fonte {i+1}")
+                    
+                    # Pega o dicionário de localização
+                    location = source.get("location", {}) 
+                    
+                    # --- LÓGICA DE EXIBIÇÃO DA ORIGEM ---
+                    if not location:
+                        st.markdown("**Origem:** Metadados de origem não disponíveis")
+                    
+                    else:
+                        location_type = location.get("type", "").lower()
+                        
+                        if location_type == "s3":
+                            uri = location.get('uri', 'URI não encontrado')
+                            # Extrai apenas o nome do arquivo
+                            filename = uri.split('/')[-1]
+                            st.markdown(f"**Arquivo (S3):** `{filename}`")
+                            
+                        elif location_type == "web":
+                            url = location.get('url', 'URL não encontrada')
+                            st.markdown(f"**Site:** {url}")
+                            
+                        else:
+                            origem_tipo = location.get('type', 'Desconhecida')
+                            if not origem_tipo:
+                               origem_tipo = "Desconhecida"
+                            st.markdown(f"**Origem:** {origem_tipo}")
+                    
+                    # --- LÓGICA DE EXIBIÇÃO DO CONTEÚDO ---
+                    source_content_text = source.get("content", "Sem conteúdo de amostra.")
+                    st.caption(source_content_text)
+                    
+                    if i < len(sources) - 1:
+                        st.divider()
+    
+    else:
+        # Se for uma mensagem do usuário (ou uma resposta de erro string)
+        st.markdown(content)
+# --- FIM DA FUNÇÃO HELPER ---
+
 
 # ETAPA 1: CHAT ATIVO (MODO BUFFERED)
 if not st.session_state["chat_finalizado"]:
     st.caption(f"Session ID: {st.session_state['user_session_id']}")
     
-    # Exibe mensagens anteriores
+    # Exibe mensagens anteriores usando a função helper
     for msg in st.session_state["mensagens"]:
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            exibir_mensagem(msg["content"], msg["role"])
 
     # Input do usuário
     if prompt := st.chat_input("Digite sua pergunta..."):
+        # Adiciona a mensagem do usuário ao histórico
         st.session_state["mensagens"].append({"role": "user", "content": prompt})
+        
+        # Exibe a mensagem do usuário IMEDIATAMENTE
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Placeholder pro "digitando..."
+        # Exibe o "Digitando..." IMEDIATAMENTE
         with st.chat_message("assistant"):
             indicador = st.empty()
             indicador.markdown("💬 Digitando...")
 
             try:
-                # Chama a URL da sua Função Lambda (qualquer que seja a URL)
-                # O IMPORTANTE É NÃO TER 'stream=True'
+                # Chama a Lambda
                 response = requests.post(CHAT_LAMBDA_URL, json={
                     "pergunta": prompt,
                     "sessionId": st.session_state["user_session_id"]
                 })
 
                 if response.status_code == 200:
-                    # Voltamos a usar response.json()
-                    resposta = response.json().get("resposta", "Sem resposta")
+                    # Salva o JSON COMPLETO no histórico
+                    full_response_data = response.json()
+                    st.session_state["mensagens"].append({"role": "assistant", "content": full_response_data})
                 else:
-                    resposta = f"Erro na API de chat: {response.text}"
+                    resposta_erro = f"Erro na API de chat: {response.text}"
+                    st.session_state["mensagens"].append({"role": "assistant", "content": resposta_erro})
 
             except Exception as e:
-                resposta = f"Erro de conexão: {e}"
+                resposta_erro = f"Erro de conexão: {e}"
+                st.session_state["mensagens"].append({"role": "assistant", "content": resposta_erro})
 
-            # Remove o indicador e mostra resposta final
-            indicador.empty()
-            st.markdown(resposta)
-
-        # Armazena resposta
-        st.session_state["mensagens"].append({"role": "assistant", "content": resposta})
+            
+            # Força o Streamlit a recarregar
+            st.rerun()
     
+    # Botão de finalizar (sem alteração)
     if st.button("Finalizar Chat e Avaliar"):
         st.session_state["chat_finalizado"] = True
         st.rerun()
 
-# ETAPA 2: FORMULÁRIO DE AVALIAÇÃO
+# ETAPA 2: FORMULÁRIO DE AVALIAÇÃO (Sem alteração)
 elif not st.session_state["avaliacao_enviada"]:
     st.header("Avalie sua experiência")
     st.caption(f"Session ID: {st.session_state['user_session_id']}")
@@ -91,7 +152,6 @@ elif not st.session_state["avaliacao_enviada"]:
         if submitted:
             nota_numero = rating_options[nota_estrelas]
             try:
-                URL_AVALIACAO = "https://fbd5gcxt52.execute-api.us-east-1.amazonaws.com/default/lambda-avaliacao"
                 payload = {
                     "sessionId": st.session_state['user_session_id'],
                     "nota": nota_numero,
@@ -109,7 +169,7 @@ elif not st.session_state["avaliacao_enviada"]:
             except Exception as e:
                 st.error(f"Erro de conexão: {e}")
 
-# ETAPA 3: TELA DE AGRADECIMENTO
+# ETAPA 3: TELA DE AGRADECIMENTO (Sem alteração)
 else:
     st.success("✅ Avaliação enviada com sucesso! Obrigado pelo seu feedback.")
     st.balloons()
@@ -119,8 +179,3 @@ else:
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
         st.rerun()
-
-
-
-
-
