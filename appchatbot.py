@@ -8,7 +8,15 @@ CHAT_LAMBDA_URL = "https://dnbm65zpeghlyum3feleblme5e0njpno.lambda-url.us-east-1
 URL_AVALIACAO = "https://fbd5gcxt52.execute-api.us-east-1.amazonaws.com/default/lambda-avaliacao" # Sua Lambda de Avaliação
 
 st.set_page_config(page_title="Chatbot Bedrock", layout="centered")
-st.title("🤖 Chatbot - Bedrock Agent")
+st.title("🔮 Oráculo Essentia")
+
+# --- Mapeamento de Assuntos/Agentes ---
+# A chave (key) é o `agent_name` que a Lambda espera
+AGENTS_OPTIONS = {
+    "nutrition": "Nutrition",  # Exibe 'Nutrition', envia 'nutrition'
+    "pharma": "Pharma",        # Exibe 'Pharma', envia 'pharma'
+    "injetaveis": "Injetáveis" # Exibe 'Injetáveis', envia 'injetaveis'
+}
 
 # --- Inicialização do Session State ---
 if "user_session_id" not in st.session_state:
@@ -19,9 +27,12 @@ if "chat_finalizado" not in st.session_state:
     st.session_state["chat_finalizado"] = False
 if "avaliacao_enviada" not in st.session_state:
     st.session_state["avaliacao_enviada"] = False
+# NOVO: O agente/assunto selecionado
+if "selected_agent_key" not in st.session_state:
+    st.session_state["selected_agent_key"] = list(AGENTS_OPTIONS.keys())[0]
 
 
-# --- FUNÇÃO HELPER PARA EXIBIR MENSAGENS (COM FONTES) ---
+# --- FUNÇÃO HELPER PARA EXIBIR MENSAGENS (COM FONTES) (Inalterado) ---
 def exibir_mensagem(content, role="assistant"):
     """
     Função helper para exibir a mensagem e as fontes.
@@ -64,7 +75,7 @@ def exibir_mensagem(content, role="assistant"):
                         else:
                             origem_tipo = location.get('type', 'Desconhecida')
                             if not origem_tipo:
-                               origem_tipo = "Desconhecida"
+                                origem_tipo = "Desconhecida"
                             st.markdown(f"**Origem:** {origem_tipo}")
                     
                     # --- LÓGICA DE EXIBIÇÃO DO CONTEÚDO ---
@@ -82,15 +93,39 @@ def exibir_mensagem(content, role="assistant"):
 
 # ETAPA 1: CHAT ATIVO (MODO BUFFERED)
 if not st.session_state["chat_finalizado"]:
-    st.caption(f"Session ID: {st.session_state['user_session_id']}")
     
-    # Exibe mensagens anteriores usando a função helper
+    # 1. Seletor de Agente
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.caption(f"Session ID: {st.session_state['user_session_id']}")
+    with col2:
+        # st.selectbox para selecionar o agente
+        # O valor de retorno é a CHAVE (ex: 'nutrition')
+        selected_agent_label = st.selectbox(
+            "Assunto", 
+            options=list(AGENTS_OPTIONS.values()),
+            index=list(AGENTS_OPTIONS.keys()).index(st.session_state["selected_agent_key"])
+        )
+        # Inverte o dicionário para obter a chave (ex: 'nutrition') a partir do rótulo ('Nutrição')
+        selected_agent_key = list(AGENTS_OPTIONS.keys())[list(AGENTS_OPTIONS.values()).index(selected_agent_label)]
+        
+        # Armazena a chave selecionada no estado da sessão
+        if selected_agent_key != st.session_state["selected_agent_key"]:
+             # IMPORTANTE: Se o agente mudar, limpamos o histórico de mensagens 
+             # para evitar confusão de contexto, mas MANTEMOS O SESSION ID
+            st.session_state["selected_agent_key"] = selected_agent_key
+            st.session_state["mensagens"] = []
+            st.rerun() # Recarrega para mostrar o chat limpo
+        
+    st.divider()
+
+    # Exibe mensagens anteriores
     for msg in st.session_state["mensagens"]:
         with st.chat_message(msg["role"]):
             exibir_mensagem(msg["content"], msg["role"])
 
     # Input do usuário
-    if prompt := st.chat_input("Digite sua pergunta..."):
+    if prompt := st.chat_input(f"Pergunte sobre {selected_agent_label}..."):
         # Adiciona a mensagem do usuário ao histórico
         st.session_state["mensagens"].append({"role": "user", "content": prompt})
         
@@ -104,10 +139,11 @@ if not st.session_state["chat_finalizado"]:
             indicador.markdown("💬 Digitando...")
 
             try:
-                # Chama a Lambda
+                # Chama a Lambda, PASSANDO O AGENT_NAME SELECIONADO
                 response = requests.post(CHAT_LAMBDA_URL, json={
                     "pergunta": prompt,
-                    "sessionId": st.session_state["user_session_id"]
+                    "sessionId": st.session_state["user_session_id"],
+                    "agent_name": st.session_state["selected_agent_key"] # NOVO CAMPO
                 })
 
                 if response.status_code == 200:
@@ -178,4 +214,5 @@ else:
         st.session_state["user_session_id"] = str(uuid.uuid4())
         st.session_state["chat_finalizado"] = False
         st.session_state["avaliacao_enviada"] = False
+        st.session_state["selected_agent_key"] = list(AGENTS_OPTIONS.keys())[0] # Reseta o agente
         st.rerun()
